@@ -1,0 +1,10 @@
+streamlit
+pandas
+numpy
+plotly
+sqlalchemy
+pymysql
+scikit-learn
+matplotlib
+streamlit-autorefresh
+werkzeug
