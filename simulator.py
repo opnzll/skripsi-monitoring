@@ -1,6 +1,11 @@
 import random
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+created_at = datetime.now(
+    ZoneInfo("Asia/Jakarta")
+)
 
 from backend.database import insert_monitoring
 

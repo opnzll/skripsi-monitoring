@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 # ==========================================================
 # AUTHENTICATION
@@ -52,6 +53,12 @@ st.caption(
 
 st.divider()
 
+col1, col2 = st.columns([8,1])
+
+with col2:
+    if st.button("🔄 Refresh"):
+        st.rerun()
+
 # ==========================================================
 # FILTER
 # ==========================================================
@@ -82,6 +89,25 @@ try:
     df = get_history(rows)
 
     last_update = get_last_timestamp()
+
+    # ==========================
+    # Convert UTC -> WIB
+    # ==========================
+
+    if not df.empty:
+        df["created_at"] = (
+            pd.to_datetime(df["created_at"])
+              .dt.tz_localize("UTC")
+              .dt.tz_convert("Asia/Jakarta")
+        )
+
+    if not last_update.empty:
+        last_update["last_update"] = (
+            pd.to_datetime(last_update["last_update"])
+              .dt.tz_localize("UTC")
+              .dt.tz_convert("Asia/Jakarta")
+        )
+
 
 except Exception as e:
 
