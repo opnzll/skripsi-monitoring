@@ -33,7 +33,7 @@ render_header()
 st.title("🧠 Clustering Analysis")
 st.caption("K-Means clustering of electrical operating patterns, with Elbow Method and Silhouette Score to validate the chosen number of clusters.")
 
-df = get_last(500)
+df = get_last(2500)
 
 if df.empty:
     st.warning("No monitoring data available.")
