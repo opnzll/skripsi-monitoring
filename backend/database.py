@@ -1,7 +1,16 @@
+import logging
+
 import pandas as pd
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
 from config import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+
+# ==========================================================
+# LOGGER
+# ==========================================================
+
+logger = logging.getLogger(__name__)
 
 # ==========================================================
 # DATABASE ENGINE
@@ -15,292 +24,254 @@ DATABASE_URL = (
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_recycle=3600
+    pool_recycle=3600,
 )
 
 # ==========================================================
 # GENERIC QUERY
 # ==========================================================
 
-def query(sql, params=None):
+def query(sql: str, params: dict | None = None) -> pd.DataFrame:
     """
-    Menjalankan SELECT dan mengembalikan DataFrame.
+    Menjalankan perintah SELECT dan mengembalikan DataFrame.
+    Jika terjadi kesalahan, mengembalikan DataFrame kosong.
     """
 
-    with engine.connect() as conn:
+    try:
+        with engine.connect() as conn:
+            return pd.read_sql(
+                text(sql),
+                conn,
+                params=params,
+            )
 
-        return pd.read_sql(
-            text(sql),
-            conn,
-            params=params
-        )
+    except SQLAlchemyError:
+        logger.exception("Database query failed.")
+        return pd.DataFrame()
+
+    except Exception:
+        logger.exception("Unexpected error while querying database.")
+        return pd.DataFrame()
+
 
 # ==========================================================
 # EXECUTE
 # ==========================================================
 
-def execute(sql, params=None):
+def execute(sql: str, params: dict | None = None) -> bool:
     """
-    INSERT / UPDATE / DELETE.
+    Menjalankan INSERT, UPDATE, atau DELETE.
+
+    Returns
+    -------
+    bool
+        True jika berhasil.
+        False jika gagal.
     """
 
-    with engine.begin() as conn:
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(sql),
+                params or {},
+            )
 
-        conn.execute(
-            text(sql),
-            params or {}
-        )
+        return True
+
+    except SQLAlchemyError:
+        logger.exception("Database execute failed.")
+        return False
+
+    except Exception:
+        logger.exception("Unexpected execute error.")
+        return False
+
 
 # ==========================================================
 # DATA TERBARU
 # ==========================================================
 
-def get_latest():
+def get_latest() -> pd.DataFrame:
 
     sql = """
-
-    SELECT *
-
-    FROM monitoring_data
-
-    ORDER BY created_at DESC
-
-    LIMIT 1
-
+        SELECT *
+        FROM monitoring_data
+        ORDER BY created_at DESC
+        LIMIT 1
     """
 
     return query(sql)
+
 
 # ==========================================================
 # LAST N DATA
 # ==========================================================
 
-def get_last(limit=50):
+def get_last(limit: int = 50) -> pd.DataFrame:
 
     sql = """
-
-    SELECT *
-
-    FROM monitoring_data
-
-    ORDER BY created_at DESC
-
-    LIMIT :limit
-
+        SELECT *
+        FROM monitoring_data
+        ORDER BY created_at DESC
+        LIMIT :limit
     """
 
-    df = query(
-        sql,
-        {
-            "limit": limit
-        }
-    )
+    df = query(sql, {"limit": limit})
 
-    return df.iloc[::-1]
+    if df.empty:
+        return df
+
+    return df.iloc[::-1].reset_index(drop=True)
+
 
 # ==========================================================
 # DATA HARI INI
 # ==========================================================
 
-def get_today():
+def get_today() -> pd.DataFrame:
 
     sql = """
-
-    SELECT *
-
-    FROM monitoring_data
-
-    WHERE DATE(created_at)=CURDATE()
-
-    ORDER BY created_at
-
+        SELECT *
+        FROM monitoring_data
+        WHERE DATE(created_at)=CURDATE()
+        ORDER BY created_at
     """
 
     return query(sql)
+
 
 # ==========================================================
 # STATISTICS
 # ==========================================================
 
-def get_statistics():
+def get_statistics() -> pd.DataFrame:
 
     sql = """
-
-    SELECT
-
-        AVG(voltage) avg_voltage,
-
-        AVG(current) avg_current,
-
-        AVG(power) avg_power,
-
-        AVG(power_factor) avg_pf,
-
-        MAX(power) max_power,
-
-        MIN(power) min_power,
-
-        COUNT(*) total_data
-
-    FROM monitoring_data
-
+        SELECT
+            AVG(voltage) AS avg_voltage,
+            AVG(current) AS avg_current,
+            AVG(power) AS avg_power,
+            AVG(power_factor) AS avg_pf,
+            MAX(power) AS max_power,
+            MIN(power) AS min_power,
+            COUNT(*) AS total_data
+        FROM monitoring_data
     """
 
     return query(sql)
 
+
 # ==========================================================
-# CLUSTER DATA
+# DATASET CLUSTERING
 # ==========================================================
 
-def get_cluster_dataset():
+def get_cluster_dataset() -> pd.DataFrame:
 
     sql = """
-
-    SELECT
-
-        voltage,
-
-        current,
-
-        power,
-
-        energy,
-
-        frequency,
-
-        power_factor
-
-    FROM monitoring_data
-
-    ORDER BY created_at
-
+        SELECT
+            voltage,
+            current,
+            power,
+            energy,
+            frequency,
+            power_factor
+        FROM monitoring_data
+        ORDER BY created_at
     """
 
     return query(sql)
+
 
 # ==========================================================
 # HISTORY
 # ==========================================================
 
-def get_history(limit=200):
+def get_history(limit: int = 200) -> pd.DataFrame:
 
     sql = """
-
-    SELECT *
-
-    FROM monitoring_data
-
-    ORDER BY created_at DESC
-
-    LIMIT :limit
-
+        SELECT *
+        FROM monitoring_data
+        ORDER BY created_at DESC
+        LIMIT :limit
     """
 
-    return query(
-        sql,
-        {
-            "limit": limit
-        }
-    )
+    return query(sql, {"limit": limit})
+
 
 # ==========================================================
-# INSERT MANUAL
+# INSERT DATA
 # ==========================================================
 
 def insert_monitoring(
-    voltage,
-    current,
-    power,
-    energy,
-    frequency,
-    power_factor
-):
+    voltage: float,
+    current: float,
+    power: float,
+    energy: float,
+    frequency: float,
+    power_factor: float,
+) -> bool:
 
     sql = """
-
-    INSERT INTO monitoring_data(
-
-        voltage,
-
-        current,
-
-        power,
-
-        energy,
-
-        frequency,
-
-        power_factor
-
-    )
-
-    VALUES(
-
-        :voltage,
-
-        :current,
-
-        :power,
-
-        :energy,
-
-        :frequency,
-
-        :power_factor
-
-    )
-
+        INSERT INTO monitoring_data (
+            voltage,
+            current,
+            power,
+            energy,
+            frequency,
+            power_factor
+        )
+        VALUES (
+            :voltage,
+            :current,
+            :power,
+            :energy,
+            :frequency,
+            :power_factor
+        )
     """
 
-    execute(
+    return execute(
         sql,
         {
-
             "voltage": voltage,
-
             "current": current,
-
             "power": power,
-
             "energy": energy,
-
             "frequency": frequency,
-
-            "power_factor": power_factor
-
-        }
+            "power_factor": power_factor,
+        },
     )
+
 
 # ==========================================================
 # LAST UPDATE
 # ==========================================================
 
-def get_last_timestamp():
+def get_last_timestamp() -> pd.DataFrame:
 
     sql = """
-
-    SELECT
-
-        MAX(created_at) last_update
-
-    FROM monitoring_data
-
+        SELECT
+            MAX(created_at) AS last_update
+        FROM monitoring_data
     """
 
     return query(sql)
+
 
 # ==========================================================
 # DATABASE STATUS
 # ==========================================================
 
-def database_status():
+def database_status() -> bool:
+    """
+    Mengecek apakah database dapat diakses.
+    """
 
     try:
+        df = query("SELECT 1")
 
-        query("SELECT 1")
+        return not df.empty
 
-        return True
-
-    except:
-
+    except Exception:
+        logger.exception("Database connection check failed.")
         return False

@@ -1,23 +1,89 @@
+"""
+Login page for Smart Energy Monitoring.
+"""
+
+from __future__ import annotations
+
+import logging
+
 import streamlit as st
+
 from backend.auth import authenticate
 
-st.set_page_config(
-    page_title="Login",
-    page_icon="🔐",
-    layout="centered",
-    initial_sidebar_state="collapsed"
+# ==========================================================
+# LOGGER
+# ==========================================================
+
+logger = logging.getLogger(__name__)
+
+# ==========================================================
+# CONSTANTS
+# ==========================================================
+
+APP_TITLE = "Smart Energy Monitoring"
+
+APP_SUBTITLE = (
+    "Electrical Monitoring System Based on IoT"
 )
 
-with open("assets/style.css", encoding="utf-8") as css:
-    st.markdown(f"<style>{css.read()}</style>", unsafe_allow_html=True)
+LOGIN_REDIRECT = "app.py"
 
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "user" not in st.session_state:
-    st.session_state.user = None
+# ==========================================================
+# HELPERS
+# ==========================================================
+
+def initialize_session() -> None:
+    """
+    Initialize session state.
+    """
+
+    st.session_state.setdefault(
+        "logged_in",
+        False,
+    )
+
+    st.session_state.setdefault(
+        "user",
+        None,
+    )
+
+
+def load_css() -> None:
+    """
+    Load application stylesheet.
+    """
+
+    with open(
+        "assets/style.css",
+        encoding="utf-8",
+    ) as css:
+
+        st.markdown(
+            f"<style>{css.read()}</style>",
+            unsafe_allow_html=True,
+        )
+
+st.set_page_config(
+
+    page_title="Login",
+
+    page_icon="🔐",
+
+    layout="centered",
+
+    initial_sidebar_state="collapsed",
+
+)
+
+load_css()
+
+initialize_session()
 
 if st.session_state.logged_in:
-    st.switch_page("app.py")
+
+    st.switch_page(
+        LOGIN_REDIRECT,
+    ) 
 
 st.markdown(
     """
@@ -33,16 +99,91 @@ st.markdown(
 _, mid, _ = st.columns([1, 2, 1])
 
 with mid:
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-    login_btn = st.button("Login", use_container_width=True, type="primary")
 
-    if login_btn:
-        user = authenticate(username, password)
-        if user:
-            st.session_state.logged_in = True
-            st.session_state.user = user
-            st.success("Login successful.")
-            st.rerun()
-        else:
-            st.error("Invalid username or password.")
+    username = st.text_input(
+        "Username",
+    )
+
+    password = st.text_input(
+        "Password",
+        type="password",
+    )
+
+    login_button = st.button(
+        "Login",
+        use_container_width=True,
+        type="primary",
+    )
+
+    if login_button:
+
+        # --------------------------------------------------
+        # VALIDATION
+        # --------------------------------------------------
+
+        if not username.strip():
+
+            st.warning(
+                "Please enter your username."
+            )
+
+            st.stop()
+
+        if not password:
+
+            st.warning(
+                "Please enter your password."
+            )
+
+            st.stop()
+
+        # --------------------------------------------------
+        # AUTHENTICATION
+        # --------------------------------------------------
+
+        try:
+
+            user = authenticate(
+                username,
+                password,
+            )
+
+            if user:
+
+                st.session_state.logged_in = True
+
+                st.session_state.user = user
+
+                logger.info(
+                    "User '%s' logged in successfully.",
+                    username,
+                )
+
+                st.success(
+                    "Login successful."
+                )
+
+                st.switch_page(
+                    LOGIN_REDIRECT,
+                )
+
+            else:
+
+                logger.warning(
+                    "Failed login attempt for user '%s'.",
+                    username,
+                )
+
+                st.error(
+                    "Invalid username or password."
+                )
+
+        except Exception:
+
+            logger.exception(
+                "Unexpected login error."
+            )
+
+            st.error(
+                "Unable to process login."
+            )

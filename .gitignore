@@ -1,28 +1,39 @@
 # Python
-__pycache__/
-*.py[cod]
+
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
 
 # Virtual Environment
+
 venv/
-
-# VS Code
-.vscode/
-
-# IDE
-.idea/
-
-# Environment
 .env
 
-# Cache
-.pytest_cache/
+# Streamlit
+
+.streamlit/secrets.toml
+
+# Logs
+
+logs/
+*.log
+
+# VS Code
+
+.vscode/
 
 # OS
-Thumbs.db
+
 .DS_Store
+Thumbs.db
 
-# Streamlit
-.streamlit/
+# Cache
 
-# Temporary
-*.log
+.pytest_cache/
+.mypy_cache/
+
+# Database
+
+*.db
+*.sqlite3

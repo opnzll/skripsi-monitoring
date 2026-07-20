@@ -1,126 +1,194 @@
+"""
+Analytics utilities for Smart Energy Monitoring.
+
+Provides:
+- Descriptive statistics
+- Power quality analysis
+"""
+
+from __future__ import annotations
+
+import logging
+
 import pandas as pd
+
+# ==========================================================
+# LOGGER
+# ==========================================================
+
+logger = logging.getLogger(__name__)
+
+# ==========================================================
+# CONSTANTS
+# ==========================================================
+
+FEATURES = {
+    "Voltage": "voltage",
+    "Current": "current",
+    "Power": "power",
+    "Frequency": "frequency",
+    "Power Factor": "power_factor",
+}
+
+VOLTAGE_MIN = 220
+VOLTAGE_MAX = 240
+
+FREQUENCY_MIN = 49
+FREQUENCY_MAX = 51
+
+POWER_FACTOR_MIN = 0.85
+
+# ==========================================================
+# VALIDATION
+# ==========================================================
+
+def _validate_dataframe(df: pd.DataFrame) -> None:
+    """
+    Validate analytics dataset.
+    """
+
+    if df.empty:
+        raise ValueError("Analytics dataset is empty.")
+
+    missing = [
+        column
+        for column in FEATURES.values()
+        if column not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Missing required columns: {missing}"
+        )
+
+
+# ==========================================================
+# HELPER
+# ==========================================================
+
+def _summary(series: pd.Series) -> tuple[float, float, float]:
+    """
+    Return average, maximum and minimum values.
+    """
+
+    return (
+        round(series.mean(), 2),
+        round(series.max(), 2),
+        round(series.min(), 2),
+    )
+
 
 # ==========================================================
 # DESCRIPTIVE STATISTICS
 # ==========================================================
 
-def descriptive_statistics(df):
+def descriptive_statistics(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Generate descriptive statistics table.
+    """
 
-    return pd.DataFrame({
+    try:
 
-        "Parameter": [
+        _validate_dataframe(df)
 
-            "Voltage",
+        rows = []
 
-            "Current",
+        for label, column in FEATURES.items():
 
-            "Power",
+            avg, maximum, minimum = _summary(
+                df[column]
+            )
 
-            "Frequency",
+            rows.append(
+                {
+                    "Parameter": label,
+                    "Average": avg,
+                    "Maximum": maximum,
+                    "Minimum": minimum,
+                }
+            )
 
-            "Power Factor"
+        return pd.DataFrame(rows)
 
-        ],
+    except Exception:
 
-        "Average": [
+        logger.exception(
+            "Failed generating descriptive statistics."
+        )
 
-            round(df["voltage"].mean(), 2),
-
-            round(df["current"].mean(), 2),
-
-            round(df["power"].mean(), 2),
-
-            round(df["frequency"].mean(), 2),
-
-            round(df["power_factor"].mean(), 2)
-
-        ],
-
-        "Maximum": [
-
-            round(df["voltage"].max(), 2),
-
-            round(df["current"].max(), 2),
-
-            round(df["power"].max(), 2),
-
-            round(df["frequency"].max(), 2),
-
-            round(df["power_factor"].max(), 2)
-
-        ],
-
-        "Minimum": [
-
-            round(df["voltage"].min(), 2),
-
-            round(df["current"].min(), 2),
-
-            round(df["power"].min(), 2),
-
-            round(df["frequency"].min(), 2),
-
-            round(df["power_factor"].min(), 2)
-
-        ]
-
-    })
+        raise
 
 
 # ==========================================================
 # POWER QUALITY
 # ==========================================================
 
-def power_quality(df):
+def power_quality(
+    df: pd.DataFrame,
+) -> dict:
+    """
+    Evaluate electrical power quality.
+    """
 
-    avg_pf = df["power_factor"].mean()
+    try:
 
-    avg_freq = df["frequency"].mean()
+        _validate_dataframe(df)
 
-    avg_voltage = df["voltage"].mean()
+        avg_voltage = round(
+            df["voltage"].mean(),
+            2,
+        )
 
-    voltage_status = (
+        avg_frequency = round(
+            df["frequency"].mean(),
+            2,
+        )
 
-        "Normal"
+        avg_pf = round(
+            df["power_factor"].mean(),
+            2,
+        )
 
-        if 220 <= avg_voltage <= 240
+        voltage_status = (
+            "Normal"
+            if VOLTAGE_MIN <= avg_voltage <= VOLTAGE_MAX
+            else "Warning"
+        )
 
-        else "Warning"
+        frequency_status = (
+            "Stable"
+            if FREQUENCY_MIN <= avg_frequency <= FREQUENCY_MAX
+            else "Unstable"
+        )
 
-    )
+        pf_status = (
+            "Good"
+            if avg_pf >= POWER_FACTOR_MIN
+            else "Low"
+        )
 
-    pf_status = (
+        return {
 
-        "Good"
+            "avg_voltage": avg_voltage,
 
-        if avg_pf >= 0.85
+            "avg_frequency": avg_frequency,
 
-        else "Low"
+            "avg_pf": avg_pf,
 
-    )
+            "voltage_status": voltage_status,
 
-    frequency_status = (
+            "frequency_status": frequency_status,
 
-        "Stable"
+            "pf_status": pf_status,
 
-        if 49 <= avg_freq <= 51
+        }
 
-        else "Unstable"
+    except Exception:
 
-    )
+        logger.exception(
+            "Failed analyzing power quality."
+        )
 
-    return {
-
-        "avg_voltage": round(avg_voltage, 2),
-
-        "avg_pf": round(avg_pf, 2),
-
-        "avg_frequency": round(avg_freq, 2),
-
-        "voltage_status": voltage_status,
-
-        "pf_status": pf_status,
-
-        "frequency_status": frequency_status
-
-    }
+        raise

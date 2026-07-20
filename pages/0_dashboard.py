@@ -1,15 +1,8 @@
 import streamlit as st
-
-# ==========================================================
-# AUTHENTICATION
-# ==========================================================
-
-if not st.session_state.get("logged_in", False):
-    st.switch_page("pages/🔐_Login.py")
-
-
-import streamlit as st
+from pathlib import Path
 from streamlit_autorefresh import st_autorefresh
+
+from backend.services import get_dashboard_data
 
 from components.sidebar import render_sidebar
 from components.header import render_header
@@ -26,188 +19,158 @@ from components.charts import (
 
 from components.status import status_panel
 
-from backend.services import get_dashboard_data
-
-
 # ==========================================================
-# PAGE CONFIG
+# PAGE CONFIGURATION
 # ==========================================================
 
 st.set_page_config(
-
     page_title="Smart Energy Monitoring",
-
     page_icon="⚡",
-
     layout="wide",
-
-    initial_sidebar_state="expanded"
-
+    initial_sidebar_state="expanded",
 )
 
+# ==========================================================
+# CONSTANTS
+# ==========================================================
+
+REFRESH_INTERVAL = 2000  # milliseconds
+CACHE_TTL = 5            # seconds
+
+# ==========================================================
+# AUTHENTICATION
+# ==========================================================
+
+if not st.session_state.get("logged_in", False):
+    st.switch_page("pages/🔐_Login.py")
 
 # ==========================================================
 # AUTO REFRESH
 # ==========================================================
 
 st_autorefresh(
-
-    interval=2000,
-
-    key="monitor_refresh"
-
+    interval=REFRESH_INTERVAL,
+    key="dashboard_refresh",
 )
 
-
 # ==========================================================
-# LOAD CSS
+# LOAD CUSTOM CSS
 # ==========================================================
 
-with open("assets/style.css", encoding="utf-8") as css:
+css_path = Path("assets/style.css")
 
+if css_path.exists():
     st.markdown(
-
-        f"<style>{css.read()}</style>",
-
-        unsafe_allow_html=True
-
+        f"<style>{css_path.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
     )
 
-
 # ==========================================================
-# SIDEBAR
+# RENDER LAYOUT
 # ==========================================================
 
 render_sidebar()
-
-
-# ==========================================================
-# HEADER
-# ==========================================================
-
 render_header()
 
+# ==========================================================
+# CACHE DASHBOARD DATA
+# ==========================================================
+
+@st.cache_data(ttl=CACHE_TTL, show_spinner=False)
+def load_dashboard_data():
+    """
+    Load dashboard data from backend service.
+
+    Cache is refreshed every 5 seconds to reduce
+    unnecessary database queries.
+    """
+    return get_dashboard_data()
 
 # ==========================================================
-# LOAD DASHBOARD DATA
+# LOAD DATA
 # ==========================================================
 
 try:
 
-    dashboard = get_dashboard_data()
+    dashboard = load_dashboard_data()
 
-    latest = dashboard["latest"]
+    if dashboard is None:
+        st.warning("⚠️ No monitoring data available.")
+        st.stop()
 
-    history = dashboard["history"]
+    latest = dashboard.get("latest")
+    history = dashboard.get("history")
+    stats = dashboard.get("stats")
+    last_update = dashboard.get("last_update")
 
-    stats = dashboard["stats"]
-
-    last_update = dashboard["last_update"]
+    if latest is None:
+        st.warning("⚠️ Monitoring data is empty.")
+        st.stop()
 
 except Exception as e:
 
-    st.error("❌ Failed to connect to the database.")
-
+    st.error("❌ Failed to load dashboard data.")
     st.exception(e)
-
     st.stop()
-
-
-if dashboard is None:
-
-    st.warning("No monitoring data available.")
-
-    st.stop()
-
-latest = dashboard["latest"]
-stats = dashboard["stats"]
-history = dashboard["history"]
-last_update = dashboard["last_update"]
-
 
 # ==========================================================
 # PAGE TITLE
 # ==========================================================
 
 st.subheader("⚡ Real-Time Monitoring Dashboard")
-
-st.caption(
-    "Live electrical parameter monitoring from ESP32 & PZEM-004T."
-)
-
+st.caption("Live electrical parameter monitoring from ESP32 & PZEM-004T.")
 st.divider()
 
 # ==========================================================
-# KPI
+# KPI SECTION
 # ==========================================================
 
 st.subheader("📊 Key Performance Indicators")
 
-col1, col2, col3, col4 = st.columns(4)
+kpi_items = [
+    {
+        "title": "Voltage",
+        "value": float(latest["voltage"]),
+        "unit": "V",
+        "status": "Normal",
+        "icon": "⚡",
+    },
+    {
+        "title": "Current",
+        "value": float(latest["current"]),
+        "unit": "A",
+        "status": "Realtime",
+        "icon": "🔋",
+    },
+    {
+        "title": "Power",
+        "value": float(latest["power"]),
+        "unit": "W",
+        "status": "Realtime",
+        "icon": "💡",
+    },
+    {
+        "title": "Power Factor",
+        "value": float(latest["power_factor"]),
+        "unit": "",
+        "status": "Good",
+        "icon": "📈",
+    },
+]
 
-with col1:
+columns = st.columns(len(kpi_items))
 
-    metric_card(
+for column, item in zip(columns, kpi_items):
 
-        title="Voltage",
+    with column:
 
-        value=round(float(latest["voltage"]), 2),
-
-        unit="V",
-
-        status="Normal",
-
-        icon="⚡"
-
-    )
-
-with col2:
-
-    metric_card(
-
-        title="Current",
-
-        value=round(float(latest["current"]), 2),
-
-        unit="A",
-
-        status="Realtime",
-
-        icon="🔋"
-
-    )
-
-with col3:
-
-    metric_card(
-
-        title="Power",
-
-        value=round(float(latest["power"]), 2),
-
-        unit="W",
-
-        status="Realtime",
-
-        icon="💡"
-
-    )
-
-with col4:
-
-    metric_card(
-
-        title="Power Factor",
-
-        value=round(float(latest["power_factor"]), 2),
-
-        unit="",
-
-        status="Good",
-
-        icon="📈"
-
-    )
+        metric_card(
+            title=item["title"],
+            value=item["value"],
+            unit=item["unit"],
+            status=item["status"],
+            icon=item["icon"],
+        )
 
 st.divider()
 
@@ -215,35 +178,29 @@ st.divider()
 # MAIN DASHBOARD
 # ==========================================================
 
-left, right = st.columns([1, 2])
+left_column, right_column = st.columns([1, 2])
 
 # ----------------------------------------------------------
-# LEFT PANEL
+# VOLTAGE GAUGE
 # ----------------------------------------------------------
 
-with left:
+with left_column:
 
     st.subheader("⚡ Voltage")
 
     gauge(
-
         title="",
-
         value=float(latest["voltage"]),
-
         minimum=180,
-
         maximum=260,
-
-        unit="V"
-
+        unit="V",
     )
 
 # ----------------------------------------------------------
-# RIGHT PANEL
+# POWER CHART
 # ----------------------------------------------------------
 
-with right:
+with right_column:
 
     st.subheader("⚡ Power Consumption")
 
@@ -251,20 +208,19 @@ with right:
 
 st.divider()
 
-
 # ==========================================================
-# SECOND ROW
+# TREND CHARTS
 # ==========================================================
 
-left, right = st.columns(2)
+left_column, right_column = st.columns(2)
 
-with left:
+with left_column:
 
     st.subheader("Voltage Trend")
 
     voltage_chart(limit=120)
 
-with right:
+with right_column:
 
     st.subheader("Current Trend")
 
@@ -278,13 +234,13 @@ st.divider()
 
 st.subheader("🖥️ System Status")
 
-col1, col2, col3 = st.columns(3, gap="large")
+system_col, device_col, reading_col = st.columns(3, gap="large")
 
 # ----------------------------------------------------------
 # SYSTEM HEALTH
 # ----------------------------------------------------------
 
-with col1:
+with system_col:
 
     status_panel()
 
@@ -292,98 +248,96 @@ with col1:
 # DEVICE INFORMATION
 # ----------------------------------------------------------
 
-with col2:
+device_info = {
+    "Device": "ESP32 + PZEM-004T",
+    "Refresh Rate": f"{REFRESH_INTERVAL // 1000} Seconds",
+    "Database": "MySQL",
+    "Status": "● ONLINE",
+}
+
+with device_col:
 
     st.subheader("📡 Device Information")
 
-    st.markdown(
+    rows = ""
+
+    for key, value in device_info.items():
+
+        color = "#5B8C5A" if key == "Status" else "white"
+
+        rows += f"""
+        <tr>
+            <td style="padding:10px;color:#B0AB9F;">{key}</td>
+            <td style="padding:10px;text-align:right;color:{color};">
+                <b>{value}</b>
+            </td>
+        </tr>
         """
-<div style="
-background:#232220;
-border:1px solid rgba(242,239,233,.09);
-border-radius:18px;
-padding:22px;
-height:245px;
-">
 
-<table style="width:100%; border-collapse:collapse;">
+    st.markdown(
+        f"""
+        <div style="
+        background:#232220;
+        border:1px solid rgba(242,239,233,.09);
+        border-radius:18px;
+        padding:22px;
+        height:245px;
+        ">
 
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Device</td>
-<td style="padding:10px;text-align:right;color:white;"><b>ESP32 + PZEM-004T</b></td>
-</tr>
+        <table style="width:100%; border-collapse:collapse;">
+        {rows}
+        </table>
 
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Refresh Rate</td>
-<td style="padding:10px;text-align:right;color:white;"><b>2 Seconds</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Database</td>
-<td style="padding:10px;text-align:right;color:white;"><b>MySQL</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Status</td>
-<td style="padding:10px;text-align:right;color:#5B8C5A;"><b>● ONLINE</b></td>
-</tr>
-
-</table>
-
-</div>
-""",
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
 # ----------------------------------------------------------
-# LATEST READING
+# LATEST SENSOR READING
 # ----------------------------------------------------------
 
-with col3:
+latest_reading = {
+    "Voltage": f'{latest["voltage"]:.2f} V',
+    "Current": f'{latest["current"]:.2f} A',
+    "Power": f'{latest["power"]:.2f} W',
+    "Frequency": f'{latest["frequency"]:.2f} Hz',
+    "Power Factor": f'{latest["power_factor"]:.2f}',
+}
+
+with reading_col:
 
     st.subheader("⚡ Latest Reading")
 
+    rows = ""
+
+    for key, value in latest_reading.items():
+
+        rows += f"""
+        <tr>
+            <td style="padding:10px;color:#B0AB9F;">{key}</td>
+            <td style="padding:10px;text-align:right;color:white;">
+                <b>{value}</b>
+            </td>
+        </tr>
+        """
+
     st.markdown(
         f"""
-<div style="
-background:#232220;
-border:1px solid rgba(242,239,233,.09);
-border-radius:18px;
-padding:22px;
-height:245px;
-">
+        <div style="
+        background:#232220;
+        border:1px solid rgba(242,239,233,.09);
+        border-radius:18px;
+        padding:22px;
+        height:245px;
+        ">
 
-<table style="width:100%; border-collapse:collapse;">
+        <table style="width:100%; border-collapse:collapse;">
+        {rows}
+        </table>
 
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Voltage</td>
-<td style="padding:10px;text-align:right;color:white;"><b>{latest["voltage"]:.2f} V</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Current</td>
-<td style="padding:10px;text-align:right;color:white;"><b>{latest["current"]:.2f} A</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Power</td>
-<td style="padding:10px;text-align:right;color:white;"><b>{latest["power"]:.2f} W</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Frequency</td>
-<td style="padding:10px;text-align:right;color:white;"><b>{latest["frequency"]:.2f} Hz</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Power Factor</td>
-<td style="padding:10px;text-align:right;color:white;"><b>{latest["power_factor"]:.2f}</b></td>
-</tr>
-
-</table>
-
-</div>
-""",
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 

@@ -1,5 +1,9 @@
 import streamlit as st
 
+from backend.logging_config import configure_logging
+
+configure_logging()
+
 st.set_page_config(
     page_title="Smart Energy Monitoring",
     page_icon="⚡",

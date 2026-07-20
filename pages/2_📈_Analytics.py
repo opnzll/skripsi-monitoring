@@ -1,4 +1,41 @@
 import streamlit as st
+from pathlib import Path
+
+from backend.services import get_analytics_data
+
+from backend.analytics import (
+    descriptive_statistics,
+    power_quality,
+)
+
+from components.cards import metric_card
+from components.charts import (
+    current_chart,
+    frequency_chart,
+    pf_chart,
+    power_chart,
+    voltage_chart,
+)
+from components.footer import render_footer
+from components.header import render_header
+from components.sidebar import render_sidebar
+
+# ==========================================================
+# PAGE CONFIGURATION
+# ==========================================================
+
+st.set_page_config(
+    page_title="Energy Analytics",
+    page_icon="📈",
+    layout="wide",
+)
+
+# ==========================================================
+# CONSTANTS
+# ==========================================================
+
+CHART_LIMIT = 200
+CACHE_TTL = 30
 
 # ==========================================================
 # AUTHENTICATION
@@ -7,61 +44,41 @@ import streamlit as st
 if not st.session_state.get("logged_in", False):
     st.switch_page("pages/🔐_Login.py")
 
-from backend.services import get_analytics_data
-
-from components.sidebar import render_sidebar
-from components.header import render_header
-from components.footer import render_footer
-from components.cards import metric_card
-
-from components.charts import (
-    power_chart,
-    voltage_chart,
-    current_chart,
-    frequency_chart,
-    pf_chart
-)
-
-from backend.analytics import (
-    descriptive_statistics,
-    power_quality
-)
-
-# ==========================================================
-# PAGE CONFIG
-# ==========================================================
-
-st.set_page_config(
-
-    page_title="Energy Analytics",
-
-    page_icon="📈",
-
-    layout="wide"
-
-)
-
 # ==========================================================
 # LOAD CSS
 # ==========================================================
 
-with open("assets/style.css", encoding="utf-8") as css:
+css_path = Path("assets/style.css")
+
+if css_path.exists():
 
     st.markdown(
-
-        f"<style>{css.read()}</style>",
-
-        unsafe_allow_html=True
-
+        f"<style>{css_path.read_text(encoding='utf-8')}</style>",
+        unsafe_allow_html=True,
     )
 
 # ==========================================================
-# HEADER
+# RENDER LAYOUT
 # ==========================================================
 
 render_sidebar()
-
 render_header()
+
+# ==========================================================
+# CACHE
+# ==========================================================
+
+@st.cache_data(
+    ttl=CACHE_TTL,
+    show_spinner=False,
+)
+def load_analytics():
+
+    return get_analytics_data()
+
+# ==========================================================
+# PAGE TITLE
+# ==========================================================
 
 st.title("📈 Energy Analytics")
 
@@ -77,11 +94,25 @@ st.divider()
 
 try:
 
-    analytics = get_analytics_data()
+    analytics = load_analytics()
+
+    if analytics is None:
+
+        st.warning("No analytics data available.")
+
+        st.stop()
 
     df = analytics["dataset"]
 
-    stats = analytics["statistics"].iloc[0]
+    statistics = analytics["statistics"]
+
+    if df.empty or statistics.empty:
+
+        st.warning("No monitoring data available.")
+
+        st.stop()
+
+    stats = statistics.iloc[0]
 
 except Exception as e:
 
@@ -91,73 +122,58 @@ except Exception as e:
 
     st.stop()
 
-if df.empty:
-
-    st.warning("No monitoring data available.")
-
-    st.stop()
-
 # ==========================================================
 # EXECUTIVE SUMMARY
 # ==========================================================
 
 st.subheader("📊 Executive Summary")
 
-c1, c2, c3, c4 = st.columns(4)
+summary_cards = [
+    {
+        "title": "Average Voltage",
+        "value": stats["avg_voltage"],
+        "unit": "V",
+        "icon": "⚡",
+    },
+    {
+        "title": "Average Current",
+        "value": stats["avg_current"],
+        "unit": "A",
+        "icon": "🔋",
+    },
+    {
+        "title": "Average Power",
+        "value": stats["avg_power"],
+        "unit": "W",
+        "icon": "💡",
+    },
+    {
+        "title": "Total Records",
+        "value": int(stats["total_data"]),
+        "unit": "",
+        "icon": "📊",
+        "is_integer": True,
+    },
+]
 
-with c1:
+columns = st.columns(len(summary_cards))
 
-    metric_card(
+for column, card in zip(columns, summary_cards):
 
-        title="Average Voltage",
+    with column:
 
-        value=f"{stats['avg_voltage']:.2f}",
+        value = (
+            f"{card['value']:,}"
+            if card.get("is_integer", False)
+            else f"{card['value']:.2f}"
+        )
 
-        unit="V",
-
-        icon="⚡"
-
-    )
-
-with c2:
-
-    metric_card(
-
-        title="Average Current",
-
-        value=f"{stats['avg_current']:.2f}",
-
-        unit="A",
-
-        icon="🔋"
-
-    )
-
-with c3:
-
-    metric_card(
-
-        title="Average Power",
-
-        value=f"{stats['avg_power']:.2f}",
-
-        unit="W",
-
-        icon="💡"
-
-    )
-
-with c4:
-
-    metric_card(
-
-        title="Total Records",
-
-        value=f"{int(stats['total_data']):,}",
-
-        icon="📊"
-
-    )
+        metric_card(
+            title=card["title"],
+            value=value,
+            unit=card["unit"],
+            icon=card["icon"],
+        )
 
 st.divider()
 
@@ -171,7 +187,7 @@ st.caption(
     "Power consumption trend based on the latest monitoring records."
 )
 
-power_chart(limit=200)
+power_chart(limit=CHART_LIMIT)
 
 st.divider()
 
@@ -181,19 +197,19 @@ st.divider()
 
 st.subheader("🔌 Electrical Parameters")
 
-left, right = st.columns(2, gap="large")
+left_column, right_column = st.columns(2, gap="large")
 
-with left:
+with left_column:
 
     st.markdown("#### ⚡ Voltage Trend")
 
-    voltage_chart(limit=200)
+    voltage_chart(limit=CHART_LIMIT)
 
-with right:
+with right_column:
 
     st.markdown("#### 🔋 Current Trend")
 
-    current_chart(limit=200)
+    current_chart(limit=CHART_LIMIT)
 
 st.divider()
 
@@ -207,19 +223,19 @@ st.caption(
     "Frequency stability and power factor analysis over the latest monitoring period."
 )
 
-left, right = st.columns(2, gap="large")
+left_column, right_column = st.columns(2, gap="large")
 
-with left:
+with left_column:
 
     st.markdown("#### 🌐 Frequency")
 
-    frequency_chart(limit=200)
+    frequency_chart(limit=CHART_LIMIT)
 
-with right:
+with right_column:
 
     st.markdown("#### 📈 Power Factor")
 
-    pf_chart(limit=200)
+    pf_chart(limit=CHART_LIMIT)
 
 st.divider()
 
@@ -234,7 +250,7 @@ summary = descriptive_statistics(df)
 st.dataframe(
     summary,
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
 )
 
 st.divider()
@@ -250,13 +266,9 @@ st.caption(
 )
 
 st.dataframe(
-
     df,
-
     use_container_width=True,
-
-    hide_index=True
-
+    hide_index=True,
 )
 
 st.divider()
@@ -269,119 +281,99 @@ st.subheader("💡 Monitoring Insight")
 
 quality = power_quality(df)
 
-voltage_status = quality["voltage_status"]
+summary_info = {
+    "Average Voltage": f"{stats['avg_voltage']:.2f} V",
+    "Average Current": f"{stats['avg_current']:.2f} A",
+    "Average Power": f"{stats['avg_power']:.2f} W",
+    "Maximum Power": f"{stats['max_power']:.2f} W",
+    "Minimum Power": f"{stats['min_power']:.2f} W",
+    "Total Records": f"{int(stats['total_data']):,}",
+}
 
-pf_status = quality["pf_status"]
+analysis_info = {
+    "Voltage Condition": quality["voltage_status"],
+    "Power Factor": quality["pf_status"],
+    "Frequency Stability": quality["frequency_status"],
+    "Dataset Quality": "🟢 Ready",
+    "Machine Learning": "🟢 Ready",
+}
 
-freq_status = quality["frequency_status"]
+left_column, right_column = st.columns(2, gap="large")
 
 # ----------------------------------------------------------
 # SYSTEM SUMMARY
 # ----------------------------------------------------------
 
-with left:
+with left_column:
+
+    rows = ""
+
+    for key, value in summary_info.items():
+
+        rows += f"""
+        <tr>
+            <td style="padding:8px;color:#B0AB9F;">{key}</td>
+            <td style="text-align:right;"><b>{value}</b></td>
+        </tr>
+        """
 
     st.markdown(
         f"""
-<div style="
-background:#232220;
-border:1px solid rgba(242,239,233,.09);
-border-radius:18px;
-padding:22px;
-height:375px;
-">
+        <div style="
+        background:#232220;
+        border:1px solid rgba(242,239,233,.09);
+        border-radius:18px;
+        padding:22px;
+        height:375px;
+        ">
 
-<h4 style="margin-top:0;">📊 System Summary</h4>
+        <h4 style="margin-top:0;">📊 System Summary</h4>
 
-<table style="width:100%;border-collapse:collapse;">
+        <table style="width:100%;border-collapse:collapse;">
+            {rows}
+        </table>
 
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Average Voltage</td>
-<td style="text-align:right;"><b>{stats['avg_voltage']:.2f} V</b></td>
-</tr>
-
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Average Current</td>
-<td style="text-align:right;"><b>{stats['avg_current']:.2f} A</b></td>
-</tr>
-
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Average Power</td>
-<td style="text-align:right;"><b>{stats['avg_power']:.2f} W</b></td>
-</tr>
-
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Maximum Power</td>
-<td style="text-align:right;"><b>{stats['max_power']:.2f} W</b></td>
-</tr>
-
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Minimum Power</td>
-<td style="text-align:right;"><b>{stats['min_power']:.2f} W</b></td>
-</tr>
-
-<tr>
-<td style="padding:8px;color:#B0AB9F;">Total Records</td>
-<td style="text-align:right;"><b>{int(stats['total_data']):,}</b></td>
-</tr>
-
-</table>
-
-</div>
-""",
-        unsafe_allow_html=True
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 # ----------------------------------------------------------
 # ANALYSIS RESULT
 # ----------------------------------------------------------
 
-with right:
+with right_column:
+
+    rows = ""
+
+    for key, value in analysis_info.items():
+
+        rows += f"""
+        <tr>
+            <td style="padding:10px;color:#B0AB9F;">{key}</td>
+            <td style="text-align:right;"><b>{value}</b></td>
+        </tr>
+        """
 
     st.markdown(
         f"""
-<div style="
-background:#232220;
-border:1px solid rgba(242,239,233,.09);
-border-radius:18px;
-padding:22px;
-height:375px;
-">
+        <div style="
+        background:#232220;
+        border:1px solid rgba(242,239,233,.09);
+        border-radius:18px;
+        padding:22px;
+        height:375px;
+        ">
 
-<h4 style="margin-top:0;">🧠 Analysis Result</h4>
+        <h4 style="margin-top:0;">🧠 Analysis Result</h4>
 
-<table style="width:100%;border-collapse:collapse;">
+        <table style="width:100%;border-collapse:collapse;">
+            {rows}
+        </table>
 
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Voltage Condition</td>
-<td style="text-align:right;"><b>{voltage_status}</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Power Factor</td>
-<td style="text-align:right;"><b>{pf_status}</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Frequency Stability</td>
-<td style="text-align:right;"><b>{freq_status}</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Dataset Quality</td>
-<td style="text-align:right;"><b>🟢 Ready</b></td>
-</tr>
-
-<tr>
-<td style="padding:10px;color:#B0AB9F;">Machine Learning</td>
-<td style="text-align:right;"><b>🟢 Ready</b></td>
-</tr>
-
-</table>
-
-</div>
-""",
-        unsafe_allow_html=True
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 st.divider()

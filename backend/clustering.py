@@ -1,12 +1,37 @@
+"""
+Machine Learning utilities for Smart Energy Monitoring.
+
+This module provides:
+
+- K-Means Clustering
+- PCA Projection
+- Elbow Method
+- Silhouette Score
+- Cluster Statistics
+"""
+
+from __future__ import annotations
+
+import logging
+
 import pandas as pd
 
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score, silhouette_samples
+from sklearn.metrics import (
+    silhouette_samples,
+    silhouette_score,
+)
+from sklearn.preprocessing import StandardScaler
 
 # ==========================================================
-# PREPROCESSING
+# LOGGER
+# ==========================================================
+
+logger = logging.getLogger(__name__)
+
+# ==========================================================
+# CONSTANTS
 # ==========================================================
 
 FEATURES = [
@@ -14,259 +39,569 @@ FEATURES = [
     "current",
     "power",
     "frequency",
-    "power_factor"
+    "power_factor",
 ]
 
+DEFAULT_RANDOM_STATE = 42
+
+DEFAULT_N_INIT = 10
+
+DEFAULT_CLUSTER = 3
+
+PCA_COMPONENTS = 2
+
 # ==========================================================
-# RUN KMEANS
+# VALIDATION
 # ==========================================================
 
-def run_kmeans(df, n_clusters=3, random_state=42):
+def _validate_dataframe(df: pd.DataFrame) -> None:
+    """
+    Validate clustering dataset.
+    """
 
-    X = df[FEATURES].copy()
+    if df.empty:
+        raise ValueError("Dataset is empty.")
+
+    missing = [
+        column
+        for column in FEATURES
+        if column not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            f"Missing required columns: {missing}"
+        )
+
+# ==========================================================
+# PREPROCESSING
+# ==========================================================
+
+def _prepare_dataset(
+    df: pd.DataFrame,
+):
+    """
+    Extract feature matrix and apply StandardScaler.
+    """
+
+    _validate_dataframe(df)
+
+    X = df.loc[:, FEATURES].copy()
 
     scaler = StandardScaler()
 
     X_scaled = scaler.fit_transform(X)
 
-    model = KMeans(
+    return X, X_scaled, scaler
+
+# ==========================================================
+# MODEL
+# ==========================================================
+
+def _create_model(
+    n_clusters: int,
+    random_state: int,
+) -> KMeans:
+    """
+    Create K-Means model.
+    """
+
+    return KMeans(
         n_clusters=n_clusters,
         random_state=random_state,
-        n_init=10
+        n_init=DEFAULT_N_INIT,
     )
 
-    labels = model.fit_predict(X_scaled)
+# ==========================================================
+# RUN K-MEANS
+# ==========================================================
 
-    result = df.copy()
+def run_kmeans(
+    df: pd.DataFrame,
+    n_clusters: int = DEFAULT_CLUSTER,
+    random_state: int = DEFAULT_RANDOM_STATE,
+) -> dict:
+    """
+    Perform K-Means clustering.
+    """
 
-    result["cluster"] = labels
+    try:
 
-    return {
-        "result": result,
-        "model": model,
-        "scaled": X_scaled,
-        "scaler": scaler,
-        "labels": labels
-    }
+        _, X_scaled, scaler = _prepare_dataset(df)
+
+        model = _create_model(
+            n_clusters,
+            random_state,
+        )
+
+        labels = model.fit_predict(
+            X_scaled,
+        )
+
+        result = df.copy()
+
+        result["cluster"] = labels
+
+        logger.info(
+            "K-Means completed (%s clusters).",
+            n_clusters,
+        )
+
+        return {
+
+            "result": result,
+
+            "model": model,
+
+            "scaled": X_scaled,
+
+            "scaler": scaler,
+
+            "labels": labels,
+
+        }
+
+    except Exception:
+
+        logger.exception(
+            "Failed running K-Means."
+        )
+
+        raise
 
 # ==========================================================
 # CLUSTER STATISTICS
 # ==========================================================
 
-def cluster_statistics(result):
+def cluster_statistics(
+    result: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Calculate mean value of each feature for every cluster.
+    """
 
-    return (
-        result
-        .groupby("cluster")[FEATURES]
-        .mean()
-        .round(2)
-    )
+    try:
 
-# ==========================================================
-# CENTROID
-# ==========================================================
+        statistics = (
+            result
+            .groupby("cluster")[FEATURES]
+            .mean()
+            .round(2)
+        )
 
-def cluster_centroid(model, scaler):
+        return statistics
 
-    centroid = pd.DataFrame(
-        scaler.inverse_transform(
-            model.cluster_centers_
-        ),
-        columns=FEATURES
-    ).round(2)
+    except Exception:
 
-    centroid.index = [
-        f"Cluster {i}"
-        for i in range(len(centroid))
-    ]
+        logger.exception(
+            "Failed calculating cluster statistics."
+        )
 
-    return centroid
+        raise
+
 
 # ==========================================================
-# PCA
+# CLUSTER CENTROID
 # ==========================================================
 
-def cluster_pca(X_scaled, labels):
+def cluster_centroid(
+    model: KMeans,
+    scaler: StandardScaler,
+) -> pd.DataFrame:
+    """
+    Transform centroid back to original feature scale.
+    """
 
-    pca = PCA(n_components=2)
+    try:
 
-    result = pca.fit_transform(X_scaled)
+        centroid = pd.DataFrame(
 
-    return pd.DataFrame({
-        "PC1": result[:,0],
-        "PC2": result[:,1],
-        "Cluster": labels.astype(str)
-    })
+            scaler.inverse_transform(
+                model.cluster_centers_
+            ),
+
+            columns=FEATURES,
+
+        ).round(2)
+
+        centroid.index = [
+
+            f"Cluster {i}"
+
+            for i in range(
+                len(centroid)
+            )
+
+        ]
+
+        return centroid
+
+    except Exception:
+
+        logger.exception(
+            "Failed calculating centroid."
+        )
+
+        raise
+
 
 # ==========================================================
-# DISTRIBUTION
+# PCA VISUALIZATION
 # ==========================================================
 
-def cluster_distribution(result):
+def cluster_pca(
+    X_scaled,
+    labels,
+) -> pd.DataFrame:
+    """
+    Reduce clustered data into 2 principal components.
+    """
 
-    distribution = (
-        result["cluster"]
-        .value_counts()
-        .sort_index()
-        .reset_index()
-    )
+    try:
 
-    distribution.columns = [
-        "Cluster",
-        "Samples"
-    ]
+        pca = PCA(
+            n_components=PCA_COMPONENTS,
+        )
 
-    return distribution
+        projection = pca.fit_transform(
+            X_scaled
+        )
+
+        return pd.DataFrame(
+
+            {
+
+                "PC1": projection[:, 0],
+
+                "PC2": projection[:, 1],
+
+                "Cluster": labels.astype(str),
+
+            }
+
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed performing PCA."
+        )
+
+        raise
+
+
+# ==========================================================
+# CLUSTER DISTRIBUTION
+# ==========================================================
+
+def cluster_distribution(
+    result: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Count number of samples in every cluster.
+    """
+
+    try:
+
+        distribution = (
+
+            result["cluster"]
+
+            .value_counts()
+
+            .sort_index()
+
+            .rename_axis("Cluster")
+
+            .reset_index(name="Samples")
+
+        )
+
+        return distribution
+
+    except Exception:
+
+        logger.exception(
+            "Failed calculating distribution."
+        )
+
+        raise
+
 
 # ==========================================================
 # MODEL INFORMATION
 # ==========================================================
 
 def model_information(
-    model,
-    result,
-    n_clusters,
-    random_state
-):
+    model: KMeans,
+    result: pd.DataFrame,
+    n_clusters: int,
+    random_state: int = DEFAULT_RANDOM_STATE,
+) -> pd.DataFrame:
+    """
+    Return model metadata.
+    """
 
-    return pd.DataFrame({
-        "Parameter":[
-            "Algorithm",
-            "Clusters",
-            "Random State",
-            "Samples",
-            "Features",
-            "Inertia"
-        ],
-        "Value":[
-            "K-Means",
-            n_clusters,
-            random_state,
-            len(result),
-            len(FEATURES),
-            round(model.inertia_,2)
-        ]
-    })
+    try:
+
+        return pd.DataFrame(
+
+            {
+
+                "Parameter": [
+
+                    "Algorithm",
+
+                    "Clusters",
+
+                    "Random State",
+
+                    "Samples",
+
+                    "Features",
+
+                    "Inertia",
+
+                ],
+
+                "Value": [
+
+                    "K-Means",
+
+                    n_clusters,
+
+                    random_state,
+
+                    len(result),
+
+                    len(FEATURES),
+
+                    round(
+                        model.inertia_,
+                        2,
+                    ),
+
+                ],
+
+            }
+
+        )
+
+    except Exception:
+
+        logger.exception(
+            "Failed creating model information."
+        )
+
+        raise
 
 # ==========================================================
 # ELBOW METHOD
 # ==========================================================
 
-def compute_elbow(df, max_k=10, random_state=42):
+def compute_elbow(
+    df: pd.DataFrame,
+    max_k: int = 10,
+    random_state: int = DEFAULT_RANDOM_STATE,
+) -> dict:
+    """
+    Compute Elbow Method for determining
+    the optimal number of clusters.
 
-    X = df[FEATURES].copy()
+    Returns
+    -------
+    dict
+        {
+            "elbow_df": pd.DataFrame,
+            "recommended_k": int
+        }
+    """
 
-    scaler = StandardScaler()
+    try:
 
-    X_scaled = scaler.fit_transform(X)
+        _, X_scaled, _ = _prepare_dataset(df)
 
-    k_values = list(range(2, max_k + 1))
+        inertia = []
+        k_values = list(range(2, max_k + 1))
 
-    inertia = []
+        for k in k_values:
 
-    for k in k_values:
+            model = _create_model(
+                n_clusters=k,
+                random_state=random_state,
+            )
 
-        model = KMeans(
-            n_clusters=k,
-            random_state=random_state,
-            n_init=10
+            model.fit(X_scaled)
+
+            inertia.append(model.inertia_)
+
+        elbow_df = pd.DataFrame(
+            {
+                "K": k_values,
+                "WCSS": inertia,
+            }
         )
 
-        model.fit(X_scaled)
+        # Maximum curvature approximation
+        diff1 = pd.Series(inertia).diff().abs()
+        diff2 = diff1.diff().abs()
 
-        inertia.append(model.inertia_)
+        recommended_k = (
+            diff2.idxmax() + 2
+            if not diff2.dropna().empty
+            else DEFAULT_CLUSTER
+        )
 
-    elbow_df = pd.DataFrame({
-        "K": k_values,
-        "WCSS": inertia
-    })
+        logger.info(
+            "Elbow Method completed."
+        )
 
-    diff1 = pd.Series(inertia).diff().abs()
-    diff2 = diff1.diff().abs()
+        return {
+            "elbow_df": elbow_df,
+            "recommended_k": recommended_k,
+        }
 
-    if len(diff2.dropna()) > 0:
-        recommended_k = diff2.idxmax() + 2
-    else:
-        recommended_k = 3
+    except Exception:
 
-    return {
-        "elbow_df": elbow_df,
-        "recommended_k": recommended_k
-    }
+        logger.exception(
+            "Failed computing Elbow Method."
+        )
+
+        raise
+
 
 # ==========================================================
 # SILHOUETTE SCORE
 # ==========================================================
 
-def compute_silhouette(df, n_clusters=3, random_state=42):
+def compute_silhouette(
+    df: pd.DataFrame,
+    n_clusters: int = DEFAULT_CLUSTER,
+    random_state: int = DEFAULT_RANDOM_STATE,
+) -> dict:
+    """
+    Compute Silhouette Score for K-Means clustering.
+    """
 
-    X = df[FEATURES].copy()
+    try:
 
-    scaler = StandardScaler()
+        _, X_scaled, _ = _prepare_dataset(df)
 
-    X_scaled = scaler.fit_transform(X)
+        model = _create_model(
+            n_clusters=n_clusters,
+            random_state=random_state,
+        )
 
-    model = KMeans(
-        n_clusters=n_clusters,
-        random_state=random_state,
-        n_init=10
-    )
+        labels = model.fit_predict(
+            X_scaled
+        )
 
-    labels = model.fit_predict(X_scaled)
+        avg_score = silhouette_score(
+            X_scaled,
+            labels,
+        )
 
-    avg_score = silhouette_score(X_scaled, labels)
+        sample_score = silhouette_samples(
+            X_scaled,
+            labels,
+        )
 
-    sample_score = silhouette_samples(X_scaled, labels)
+        result = df.copy()
 
-    result = df.copy()
+        result["cluster"] = labels
 
-    result["cluster"] = labels
+        result["silhouette"] = sample_score
 
-    result["silhouette"] = sample_score
+        cluster_score = (
+            result
+            .groupby("cluster")["silhouette"]
+            .mean()
+            .round(4)
+            .reset_index()
+        )
 
-    cluster_score = (
-        result
-        .groupby("cluster")["silhouette"]
-        .mean()
-        .round(4)
-        .reset_index()
-    )
+        logger.info(
+            "Silhouette Score computed."
+        )
 
-    return {
-        "result": result,
-        "avg_score": avg_score,
-        "cluster_score": cluster_score
-    }
+        return {
+
+            "result": result,
+
+            "avg_score": avg_score,
+
+            "cluster_score": cluster_score,
+
+        }
+
+    except Exception:
+
+        logger.exception(
+            "Failed computing Silhouette Score."
+        )
+
+        raise
+
 
 # ==========================================================
-# SILHOUETTE INTERPRETATION
+# SILHOUETTE QUALITY
 # ==========================================================
 
-def silhouette_quality(avg_score):
+def silhouette_quality(
+    avg_score: float,
+) -> tuple[str, str]:
+    """
+    Interpret Silhouette Score.
+    """
 
     if avg_score >= 0.70:
+
         return (
+
             "Excellent ⭐⭐⭐⭐⭐",
-            "The clusters are well separated and highly compact. "
-            "This indicates excellent clustering quality."
+
+            (
+                "The clusters are well separated "
+                "and highly compact."
+            ),
+
         )
 
-    if avg_score >= 0.50:
+    elif avg_score >= 0.50:
+
         return (
+
             "Good ⭐⭐⭐⭐",
-            "The clusters are reasonably separated and compact. "
-            "This clustering result is considered good."
+
+            (
+                "Clusters are reasonably separated "
+                "with good compactness."
+            ),
+
         )
 
-    if avg_score >= 0.25:
+    elif avg_score >= 0.25:
+
         return (
+
             "Fair ⭐⭐⭐",
-            "The clusters overlap slightly. "
-            "The clustering is acceptable but could be improved."
+
+            (
+                "Clusters overlap slightly. "
+                "The result is acceptable."
+            ),
+
         )
 
-    return (
-        "Poor ⭐",
-        "The clusters overlap heavily. "
-        "The selected number of clusters is not recommended."
-    )
+    else:
+
+        return (
+
+            "Poor ⭐",
+
+            (
+                "Clusters overlap significantly. "
+                "Consider using another value of K."
+            ),
+
+        )

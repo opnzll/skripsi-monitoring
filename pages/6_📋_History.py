@@ -1,5 +1,16 @@
-import streamlit as st
+"""
+History page for Smart Energy Monitoring.
+
+Displays historical monitoring data with search,
+filter, and CSV export functionality.
+"""
+
+from __future__ import annotations
+
+import logging
+
 import pandas as pd
+import streamlit as st
 
 # ==========================================================
 # AUTHENTICATION
@@ -8,76 +19,118 @@ import pandas as pd
 if not st.session_state.get("logged_in", False):
     st.switch_page("pages/🔐_Login.py")
 
-from components.sidebar import render_sidebar
-from components.header import render_header
-from components.footer import render_footer
+# ==========================================================
+# COMPONENTS
+# ==========================================================
+
 from components.cards import metric_card
-
-from backend.database import (
-    get_history,
-    get_last_timestamp
-)
+from components.footer import render_footer
+from components.header import render_header
+from components.sidebar import render_sidebar
 
 # ==========================================================
-# PAGE CONFIG
+# SERVICES
 # ==========================================================
 
-st.set_page_config(
-    page_title="History",
-    page_icon="📋",
-    layout="wide"
-)
+from backend.services import get_history_data
 
 # ==========================================================
-# STYLE
+# LOGGER
 # ==========================================================
 
-with open("assets/style.css", encoding="utf-8") as css:
-    st.markdown(
-        f"<style>{css.read()}</style>",
-        unsafe_allow_html=True
+logger = logging.getLogger(__name__)
+
+# ==========================================================
+# CONSTANTS
+# ==========================================================
+
+DEFAULT_ROWS = 100
+
+ROW_OPTIONS = [
+    50,
+    100,
+    250,
+    500,
+]
+
+TIMEZONE = "Asia/Jakarta"
+
+CSV_FILENAME = "monitoring_history.csv"
+
+# ==========================================================
+# HELPERS
+# ==========================================================
+
+def convert_timezone(
+    df: pd.DataFrame,
+    column: str,
+) -> pd.DataFrame:
+    """
+    Convert UTC timestamp to local timezone.
+    """
+
+    if df.empty:
+        return df
+
+    df = df.copy()
+
+    df[column] = (
+        pd.to_datetime(df[column])
+        .dt.tz_localize("UTC")
+        .dt.tz_convert(TIMEZONE)
     )
 
-render_sidebar()
-render_header()
+    return df
 
-# ==========================================================
-# HEADER
-# ==========================================================
 
-st.title("📋 Historical Monitoring")
+def search_dataframe(
+    df: pd.DataFrame,
+    keyword: str,
+) -> pd.DataFrame:
+    """
+    Filter dataframe using keyword.
+    """
 
-st.caption(
-    "Browse, search and export historical electrical monitoring data collected from the IoT system."
-)
+    if not keyword:
+        return df
 
-st.divider()
+    keyword = keyword.lower()
 
-col1, col2 = st.columns([8,1])
+    mask = (
+        df.astype(str)
+        .apply(lambda col: col.str.lower())
+        .apply(lambda col: col.str.contains(keyword))
+        .any(axis=1)
+    )
 
-with col2:
-    if st.button("🔄 Refresh"):
-        st.rerun()
+    return df.loc[mask]
 
 # ==========================================================
 # FILTER
 # ==========================================================
 
-left, right = st.columns([3,1])
+left, right = st.columns([3, 1])
 
 with left:
 
     keyword = st.text_input(
-        "🔍 Search Data",
-        placeholder="Search voltage, current, power..."
+
+        label="🔍 Search Data",
+
+        placeholder="Search voltage, current, power...",
+
     )
 
 with right:
 
     rows = st.selectbox(
-        "Rows",
-        [50,100,250,500],
-        index=1
+
+        label="Rows",
+
+        options=ROW_OPTIONS,
+
+        index=ROW_OPTIONS.index(DEFAULT_ROWS),
+
     )
 
 # ==========================================================
@@ -86,40 +139,53 @@ with right:
 
 try:
 
-    df = get_history(rows)
+    history = get_history_data(rows)
 
-    last_update = get_last_timestamp()
+    df = history["history"]
 
-    # ==========================
-    # Convert UTC -> WIB
-    # ==========================
+    last_update = history["last_update"]
 
-    if not df.empty:
-        df["created_at"] = (
-            pd.to_datetime(df["created_at"])
-              .dt.tz_localize("UTC")
-              .dt.tz_convert("Asia/Jakarta")
+    if df.empty:
+
+        logger.warning(
+            "History page requested but dataset is empty."
         )
 
-    if not last_update.empty:
-        last_update["last_update"] = (
-            pd.to_datetime(last_update["last_update"])
-              .dt.tz_localize("UTC")
-              .dt.tz_convert("Asia/Jakarta")
+        st.warning(
+            "No historical data available."
         )
 
+        st.stop()
 
-except Exception as e:
+    df = convert_timezone(
+        df,
+        "created_at",
+    )
 
-    st.error("Database Error")
+    if last_update is not None:
 
-    st.exception(e)
+        last_update = pd.DataFrame(
+            {
+                "last_update": [
+                    last_update,
+                ]
+            }
+        )
 
-    st.stop()
+        last_update = convert_timezone(
+            last_update,
+            "last_update",
+        )
 
-if df.empty:
+except Exception:
 
-    st.warning("No historical data available.")
+    logger.exception(
+        "Failed loading history data."
+    )
+
+    st.error(
+        "Unable to load monitoring history."
+    )
 
     st.stop()
 
@@ -127,31 +193,37 @@ if df.empty:
 # SEARCH
 # ==========================================================
 
-if keyword:
+df = search_dataframe(
+    df,
+    keyword,
+)
 
-    keyword = keyword.lower()
+if df.empty:
 
-    df = df[
-        df.astype(str)
-        .apply(lambda x: x.str.lower())
-        .apply(lambda x: x.str.contains(keyword))
-        .any(axis=1)
-    ]
+    st.info(
+        "No matching records found."
+    )
+
+    st.stop()
 
 # ==========================================================
 # KPI
 # ==========================================================
 
-last = last_update.iloc[0]["last_update"]
+last = (
+    last_update.iloc[0]["last_update"]
+    if last_update is not None
+    else None
+)
 
-c1,c2,c3,c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
 with c1:
 
     metric_card(
         title="Displayed",
         value=len(df),
-        icon="📄"
+        icon="📄",
     )
 
 with c2:
@@ -159,24 +231,28 @@ with c2:
     metric_card(
         title="Columns",
         value=len(df.columns),
-        icon="📊"
+        icon="📊",
     )
 
 with c3:
 
     metric_card(
         title="Latest Voltage",
-        value=f'{df.iloc[0]["voltage"]:.2f}',
+        value=f"{df.iloc[0]['voltage']:.2f}",
         unit="V",
-        icon="⚡"
+        icon="⚡",
     )
 
 with c4:
 
     metric_card(
         title="Last Update",
-        value=last.strftime("%H:%M:%S"),
-        icon="🕒"
+        value=(
+            last.strftime("%H:%M:%S")
+            if last is not None
+            else "-"
+        ),
+        icon="🕒",
     )
 
 st.divider()
@@ -185,12 +261,22 @@ st.divider()
 # TABLE
 # ==========================================================
 
-st.subheader("📑 Historical Dataset")
+st.subheader(
+    "📑 Historical Dataset"
+)
+
+st.caption(
+    f"Displaying {len(df):,} monitoring records."
+)
 
 st.dataframe(
+
     df,
+
     use_container_width=True,
-    hide_index=True
+
+    hide_index=True,
+
 )
 
 st.divider()
@@ -199,18 +285,44 @@ st.divider()
 # EXPORT
 # ==========================================================
 
-st.subheader("⬇ Export")
+st.subheader(
+    "⬇ Export Dataset"
+)
 
-csv = df.to_csv(index=False).encode("utf-8")
+st.caption(
+    "Download the filtered monitoring dataset as CSV."
+)
+
+csv = df.to_csv(
+    index=False,
+).encode("utf-8")
 
 st.download_button(
-    "Download CSV",
-    csv,
-    file_name="monitoring_history.csv",
+
+    label="Download CSV",
+
+    data=csv,
+
+    file_name=CSV_FILENAME,
+
     mime="text/csv",
-    use_container_width=True
+
+    use_container_width=True,
+
+)
+
+logger.info(
+
+    "History dataset ready for export (%d rows).",
+
+    len(df),
+
 )
 
 st.divider()
+
+# ==========================================================
+# FOOTER
+# ==========================================================
 
 render_footer()
