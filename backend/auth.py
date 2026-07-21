@@ -1,5 +1,6 @@
 from werkzeug.security import check_password_hash
 
+from config import DB_HOST, DB_NAME
 from backend.database import query, execute
 
 
@@ -12,7 +13,7 @@ def authenticate(username, password):
     sql = """
     SELECT *
     FROM users
-    WHERE username=:username
+    WHERE username = :username
     LIMIT 1
     """
 
@@ -23,9 +24,11 @@ def authenticate(username, password):
         }
     )
 
-    print("=" * 50)
-    print("Username input :", username)
-    print("Jumlah user :", len(user))
+    print("=" * 60)
+    print("AUTH DB        :", DB_HOST, "/", DB_NAME)
+    print("Username Input :", repr(username))
+    print("Password Input :", repr(password))
+    print("Jumlah User    :", len(user))
 
     if user.empty:
         print("❌ USER TIDAK DITEMUKAN")
@@ -33,16 +36,16 @@ def authenticate(username, password):
 
     user = user.iloc[0]
 
-    print("Username DB :", user["username"])
-    print("Role :", user["role"])
-    print("Hash :", user["password"][:30] + "...")
+    print("Username DB    :", user["username"])
+    print("Role           :", user["role"])
+    print("Hash DB        :", user["password"][:40] + "...")
 
     result = check_password_hash(
         user["password"],
-        password
+        password,
     )
 
-    print("Password cocok :", result)
+    print("Password Cocok :", result)
 
     if not result:
         print("❌ PASSWORD SALAH")
@@ -54,7 +57,7 @@ def authenticate(username, password):
         """
         UPDATE users
         SET last_login = NOW()
-        WHERE id=:id
+        WHERE id = :id
         """,
         {
             "id": int(user["id"])
@@ -65,8 +68,10 @@ def authenticate(username, password):
         "id": int(user["id"]),
         "fullname": user["fullname"],
         "username": user["username"],
-        "role": user["role"]
+        "role": user["role"],
     }
+
+
 # ==========================================================
 # SESSION
 # ==========================================================
@@ -74,7 +79,6 @@ def authenticate(username, password):
 def login(session, user):
 
     session["logged_in"] = True
-
     session["user"] = user
 
 
@@ -86,9 +90,6 @@ def logout(session):
 def is_logged_in(session):
 
     return session.get(
-
         "logged_in",
-
-        False
-
+        False,
     )
