@@ -2,7 +2,7 @@
    SMART ENERGY MONITORING — Flat Dark Theme
 ========================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 :root{
     /* Backgrounds — flat, no gradient/grid/texture */
@@ -31,8 +31,10 @@
     --radius:8px;
     --radius-sm:6px;
 
-    /* Two fonts only */
+    /* Two fonts for the app UI, plus a display face
+       reserved for the auth screen's hero headline only */
     --font-body:"Inter",sans-serif;
+    --font-display:"Space Grotesk",sans-serif;
     --font-mono:"JetBrains Mono",monospace;
 }
 
@@ -655,43 +657,296 @@ img{ border-radius:var(--radius-sm); }
     color:var(--text-muted);
 }
 
-/* Login page card */
-.login-card{
-    background:var(--bg-panel);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:40px 36px;
-    max-width:400px;
-    margin:60px auto 0 auto;
+/* ==========================================================
+   AUTH SCREEN — split panel login
+   (.st-key-auth_shell is the stable class Streamlit gives
+   st.container(key="auth_shell"); everything below is
+   scoped under it so other pages are untouched)
+========================================================== */
+
+body:has(.st-key-auth_shell) header[data-testid="stHeader"],
+body:has(.st-key-auth_shell) #MainMenu,
+body:has(.st-key-auth_shell) footer{
+    display:none !important;
 }
 
-.login-logo{
-    width:52px;
-    height:52px;
-    border-radius:14px;
-    background:linear-gradient(135deg, var(--accent), #3F6BC7);
+/* Fully hide the nav sidebar on the auth screen — no page list
+   should be discoverable before login, regardless of whatever
+   collapsed/expanded state the browser session remembers. */
+body:has(.st-key-auth_shell) section[data-testid="stSidebar"]{
+    display:none !important;
+}
+
+body:has(.st-key-auth_shell) [data-testid="stAppViewContainer"]{
+    background:
+        radial-gradient(680px circle at 12% 15%, rgba(91,141,239,.07), transparent 60%),
+        radial-gradient(560px circle at 88% 85%, rgba(91,141,239,.06), transparent 60%),
+        var(--bg-primary);
+}
+
+/* True centering — both axes, full viewport, no dead space.
+   Reset stMain's own padding/margin first: Streamlit reserves
+   asymmetric space there by default (e.g. for the sidebar
+   toggle), which was pulling the card off-center. */
+body:has(.st-key-auth_shell) [data-testid="stAppViewContainer"],
+body:has(.st-key-auth_shell) [data-testid="stMain"]{
+    padding:0 !important;
+    margin:0 !important;
+}
+
+body:has(.st-key-auth_shell) [data-testid="stMain"]{
+    display:flex !important;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    min-height:100vh;
+    width:100%;
+}
+
+body:has(.st-key-auth_shell) [data-testid="stMain"] > div{
+    width:100%;
+    display:flex;
+    justify-content:center;
+}
+
+body:has(.st-key-auth_shell) .block-container{
+    max-width:1040px;
+    width:100%;
+    margin:0 auto !important;
+    padding:24px !important;
+}
+
+/* Buttons wrap their label in a <p>, and the global
+   `p{ color:var(--text-secondary) }` rule was winning over
+   the button's own color since inheritance always loses to
+   any rule that targets the element directly. Force it back. */
+.stButton > button p{
+    color:inherit !important;
+    font-weight:inherit !important;
+}
+
+/* Outer card — the whole two-pane frame */
+.st-key-auth_shell{
+    border:1px solid var(--border);
+    border-radius:18px;
+    background:var(--bg-panel);
+    box-shadow:0 24px 70px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.02);
+    overflow:hidden;
+}
+
+.st-key-auth_shell [data-testid="stHorizontalBlock"]{
+    gap:0 !important;
+    align-items:stretch;
+}
+
+.st-key-auth_shell [data-testid="column"]:nth-of-type(1){
+    padding:40px 44px 44px 44px;
+}
+
+.st-key-auth_shell [data-testid="column"]:nth-of-type(2){
+    padding:0;
+    display:flex;
+}
+
+/* Login inputs read as a plain terminal in monospace — the
+   global numeric-input rule doesn't belong here. */
+.st-key-auth_shell .stTextInput input{
+    font-family:var(--font-body) !important;
+    font-size:14px !important;
+    padding:12px 14px !important;
+}
+
+.auth-brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+
+.auth-brand-mark{
+    width:32px;
+    height:32px;
+    border-radius:8px;
+    background:var(--accent-dim);
+    border:1px solid var(--accent-border);
+    color:var(--accent);
     display:flex;
     align-items:center;
     justify-content:center;
-    font-size:24px;
-    margin:0 auto 18px auto;
+    flex-shrink:0;
 }
 
-.login-title{
-    text-align:center;
-    font-family:var(--font-body);
-    font-size:20px;
-    font-weight:700;
+.auth-brand-name{
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:14px;
+    letter-spacing:.2px;
     color:var(--text);
-    margin-bottom:4px;
 }
 
-.login-subtitle{
+/* Left pane — the actual form lives here, wraps Streamlit widgets */
+.auth-left{
+    padding-top:14px;
+}
+
+.auth-heading{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:32px;
+    letter-spacing:-.3px;
+    color:var(--text);
+    margin:22px 0 6px 0;
+}
+
+.auth-subheading{
+    font-family:var(--font-body);
+    font-size:14px;
+    color:var(--text-muted);
+    margin-bottom:30px;
+}
+
+.auth-left label{
+    font-family:var(--font-body) !important;
+    font-size:13px !important;
+    color:var(--text-secondary) !important;
+}
+
+.st-key-auth_shell .stButton > button[kind="primary"]{
+    padding:11px 0;
+    font-size:15px;
+    letter-spacing:.2px;
+}
+
+.auth-forgot{
+    display:block;
+    text-align:right;
+    font-family:var(--font-body);
+    font-size:12px;
+    color:var(--text-muted);
+    margin:6px 0 18px 0;
+}
+
+.auth-fineprint{
+    font-family:var(--font-body);
+    font-size:11px;
+    color:var(--text-muted);
     text-align:center;
+    margin-top:20px;
+    line-height:1.5;
+}
+
+/* Right pane — decorative, waveform + live stat */
+.auth-visual{
+    position:relative;
+    background:var(--bg-elevated);
+    border-left:1px solid var(--border);
+    padding:44px 36px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+    width:100%;
+    overflow:hidden;
+}
+
+.auth-visual-copy{
+    position:relative;
+    z-index:1;
+}
+
+.auth-visual-title{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:22px;
+    letter-spacing:-.2px;
+    color:var(--text);
+    margin-bottom:8px;
+}
+
+.auth-visual-sub{
     font-family:var(--font-body);
     font-size:13px;
+    line-height:1.55;
     color:var(--text-muted);
-    margin-bottom:28px;
+    max-width:280px;
+}
+
+.auth-wave{
+    position:relative;
+    z-index:1;
+    margin:28px 0;
+}
+
+.auth-wave::before{
+    content:"";
+    position:absolute;
+    inset:-30px;
+    background:radial-gradient(circle, rgba(91,141,239,.18), transparent 65%);
+    filter:blur(6px);
+    z-index:-1;
+}
+
+.auth-wave svg{
+    width:100%;
+    height:auto;
+    display:block;
+}
+
+.auth-wave-path{
+    stroke:var(--accent);
+    stroke-width:2.5;
+    stroke-linecap:round;
+    fill:none;
+    stroke-dasharray:600;
+    stroke-dashoffset:600;
+    animation:drawWave 1.6s ease-out forwards;
+}
+
+@keyframes drawWave{
+    to{ stroke-dashoffset:0; }
+}
+
+.auth-stat{
+    position:relative;
+    z-index:1;
+    font-family:var(--font-mono);
+    font-size:34px;
+    font-weight:600;
+    color:var(--accent);
+    letter-spacing:.2px;
+}
+
+.auth-stat-label{
+    font-family:var(--font-body);
+    font-size:12px;
+    color:var(--text-muted);
+    margin-bottom:20px;
+}
+
+.auth-badges{
+    position:relative;
+    z-index:1;
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+}
+
+.auth-badge{
+    font-family:var(--font-mono);
+    font-size:11px;
+    color:var(--text-secondary);
+    background:rgba(255,255,255,.03);
+    border:1px solid var(--border);
+    border-radius:999px;
+    padding:5px 12px;
+}
+
+@media (max-width:860px){
+    .st-key-auth_shell [data-testid="stHorizontalBlock"]{
+        flex-direction:column;
+    }
+    .auth-visual{
+        border-left:none;
+        border-top:1px solid var(--border);
+    }
 }
 
 /* ==========================================================
