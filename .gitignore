@@ -37,3 +37,8 @@ Thumbs.db
 
 *.db
 *.sqlite3
+
+# Local database configuration and backups
+/config.py
+/config_railway_backup.py
+/clustering_page_backup.py

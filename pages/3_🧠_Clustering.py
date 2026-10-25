@@ -97,7 +97,17 @@ render_header()
 # ==========================================================
 
 @st.cache_data(ttl=CACHE_DATA_TTL, show_spinner=False)
-def load_dataset():
+def load_dataset(source: str):
+    if source == "Dataset Penelitian Tetap":
+        import pandas as pd
+
+        csv_path = Path(__file__).resolve().parent.parent / "dataset_penelitian_final.csv"
+
+        if not csv_path.is_file():
+            raise FileNotFoundError(f"Dataset penelitian tidak ditemukan: {csv_path}")
+
+        return pd.read_csv(csv_path)
+
     return get_clustering_data(MAX_RECORDS)
 
 
@@ -119,9 +129,21 @@ def load_silhouette(dataset, k: int):
 # LOAD DATASET
 # ==========================================================
 
+st.subheader("Sumber Data Clustering")
+
+data_source = st.radio(
+    "Pilih sumber data:",
+    options=[
+        "Dataset Penelitian Tetap",
+        "Database Monitoring Terbaru",
+    ],
+    index=0,
+    horizontal=True,
+)
+
 try:
 
-    df = load_dataset()
+    df = load_dataset(data_source)
 
 except Exception as e:
 
